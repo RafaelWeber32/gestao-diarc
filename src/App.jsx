@@ -20,18 +20,26 @@ import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged }
 import { getFirestore, doc, setDoc, updateDoc, deleteDoc, onSnapshot, collection } from 'firebase/firestore';
 
 // ==========================================
-// COLE SUAS CHAVES DO FIREBASE ABAIXO!
+// CONFIGURAÇÃO DO FIREBASE
+// O código agora entende automaticamente se está no ambiente 
+// de testes ou no seu computador/Vercel.
 // ==========================================
-const firebaseConfig = {
-  // COLE SEU CÓDIGO AQUI
-  apiKey: "AIzaSyDx5TvI_LoSv-2PCe_Fzpyc_HfktNMROjo",
+let firebaseConfig = {};
+if (typeof __firebase_config !== 'undefined') {
+  firebaseConfig = JSON.parse(__firebase_config);
+} else {
+  // SE VOCÊ ESTÁ NO VS CODE, COLE SEU CÓDIGO DENTRO DESTA CHAVE ABAIXO:
+  firebaseConfig = {
+    // COLE AQUI
+    apiKey: "AIzaSyDx5TvI_LoSv-2PCe_Fzpyc_HfktNMROjo",
   authDomain: "gerenciamento-operacional.firebaseapp.com",
   projectId: "gerenciamento-operacional",
   storageBucket: "gerenciamento-operacional.firebasestorage.app",
   messagingSenderId: "209364835579",
   appId: "1:209364835579:web:c8cd83406e324d5925645e",
   measurementId: "G-S6F5XPSQSD"
-};
+  };
+}
 
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 const firebaseApp = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
@@ -41,6 +49,7 @@ const db = firebaseApp ? getFirestore(firebaseApp) : null;
 const App = () => {
   // --- FIREBASE STATE ---
   const [user, setUser] = useState(null);
+  const [authError, setAuthError] = useState(null); // Novo estado para capturar o erro
 
   // --- STATE MANAGEMENT ---
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -62,7 +71,10 @@ const App = () => {
 
   // --- FIREBASE EFFECTS ---
   useEffect(() => {
-    if (!auth) return;
+    if (!auth) {
+      setAuthError("Chaves do Firebase não configuradas.");
+      return;
+    }
     const initAuth = async () => {
       try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -71,11 +83,15 @@ const App = () => {
           await signInAnonymously(auth);
         }
       } catch (error) {
-        console.error("Auth error", error);
+        console.error("Auth error:", error);
+        setAuthError(error.message); // Salva o erro para mostrar na tela
       }
     };
     initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (u) setAuthError(null);
+    });
     return () => unsubscribe();
   }, []);
 
@@ -122,7 +138,11 @@ const App = () => {
   // --- HANDLERS ---
   const handleAddDemanda = async (e) => {
     e.preventDefault();
-    if (!newDemanda.title || !newDemanda.obraId || !user) return;
+    if (!newDemanda.title || !newDemanda.obraId) return;
+    if (!user) {
+      alert("Aguarde a conexão com o banco de dados antes de salvar.");
+      return;
+    }
     
     try {
       if (editingDemandaId) {
@@ -139,6 +159,7 @@ const App = () => {
       setActiveTab('demandas');
     } catch (error) {
       console.error("Erro ao salvar demanda", error);
+      alert("Erro ao salvar: " + error.message);
     }
   };
 
@@ -172,7 +193,11 @@ const App = () => {
 
   const handleAddObra = async (e) => {
     e.preventDefault();
-    if (!newObra.name || !user) return;
+    if (!newObra.name) return;
+    if (!user) {
+      alert("Aguarde a conexão com o banco de dados antes de salvar.");
+      return;
+    }
     try {
       if (editingObraId) {
         const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'obras', editingObraId.toString());
@@ -204,7 +229,11 @@ const App = () => {
 
   const handleAddDisciplina = async (e) => {
     e.preventDefault();
-    if (!newDisciplina || !user) return;
+    if (!newDisciplina) return;
+    if (!user) {
+      alert("Aguarde a conexão com o banco de dados antes de salvar.");
+      return;
+    }
     try {
       const newId = Date.now().toString();
       await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'disciplinas', newId), { id: newId, name: newDisciplina });
@@ -216,7 +245,11 @@ const App = () => {
 
   const handleAddStatus = async (e) => {
     e.preventDefault();
-    if (!newStatus.name || !user) return;
+    if (!newStatus.name) return;
+    if (!user) {
+      alert("Aguarde a conexão com o banco de dados antes de salvar.");
+      return;
+    }
     try {
       const newId = Date.now().toString();
       await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'statusList', newId), { ...newStatus, id: newId });
@@ -343,8 +376,19 @@ const App = () => {
       <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-10 pt-20 md:pt-10">
         <div className="max-w-6xl mx-auto">
           
-          {/* AVISO DE CONEXÃO */}
-          {!user && (
+          {/* AVISOS DE CONEXÃO E ERRO */}
+          {authError && (
+            <div className="mb-4 p-4 bg-red-50 text-red-800 rounded-lg border border-red-200 font-medium shadow-sm flex items-start gap-3">
+              <AlertCircle className="mt-0.5 shrink-0" size={20} />
+              <div>
+                <p>Falha na conexão com o Banco de Dados!</p>
+                <p className="text-sm font-normal mt-1 opacity-90">Erro técnico: {authError}</p>
+                <p className="text-sm font-normal mt-1">Verifique se você ativou o <strong>Login Anônimo</strong> no painel Authentication do Firebase.</p>
+              </div>
+            </div>
+          )}
+
+          {!user && !authError && (
             <div className="mb-4 p-4 bg-blue-50 text-blue-800 rounded-lg border border-blue-200">
               Conectando à nuvem para salvar seus dados...
             </div>
