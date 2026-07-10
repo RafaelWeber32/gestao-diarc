@@ -41,7 +41,10 @@ if (typeof __firebase_config !== 'undefined') {
   };
 }
 
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+// Removendo barras "/" do App ID para evitar o erro de quantidade de segmentos na referência da coleção do Firebase
+const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const appId = String(rawAppId).replace(/\//g, '_');
+
 const firebaseApp = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
 const auth = firebaseApp ? getAuth(firebaseApp) : null;
 const db = firebaseApp ? getFirestore(firebaseApp) : null;
@@ -49,7 +52,7 @@ const db = firebaseApp ? getFirestore(firebaseApp) : null;
 const App = () => {
   // --- FIREBASE STATE ---
   const [user, setUser] = useState(null);
-  const [authError, setAuthError] = useState(null); // Novo estado para capturar o erro
+  const [authError, setAuthError] = useState(null);
 
   // --- STATE MANAGEMENT ---
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -62,10 +65,14 @@ const App = () => {
   // --- FORMS STATE ---
   const [editingDemandaId, setEditingDemandaId] = useState(null);
   const [editingObraId, setEditingObraId] = useState(null);
+  const [editingDisciplinaId, setEditingDisciplinaId] = useState(null);
+  const [editingStatusId, setEditingStatusId] = useState(null);
+  
   const [newDemanda, setNewDemanda] = useState({ title: '', obraId: '', disciplinaId: '', statusId: '', dueDate: '', notes: '' });
   const [newObra, setNewObra] = useState({ name: '', scope: '', status: 'Em Andamento' });
   const [newDisciplina, setNewDisciplina] = useState('');
   const [newStatus, setNewStatus] = useState({ name: '', color: 'bg-slate-200 text-slate-800' });
+  
   const [filterObra, setFilterObra] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
 
@@ -84,7 +91,7 @@ const App = () => {
         }
       } catch (error) {
         console.error("Auth error:", error);
-        setAuthError(error.message); // Salva o erro para mostrar na tela
+        setAuthError(error.message);
       }
     };
     initAuth();
@@ -135,7 +142,7 @@ const App = () => {
     return () => { unsubObras(); unsubDisciplinas(); unsubStatus(); unsubDemandas(); };
   }, [user]);
 
-  // --- HANDLERS ---
+  // --- HANDLERS: DEMANDAS ---
   const handleAddDemanda = async (e) => {
     e.preventDefault();
     if (!newDemanda.title || !newDemanda.obraId) return;
@@ -191,13 +198,11 @@ const App = () => {
     }
   };
 
+  // --- HANDLERS: OBRAS ---
   const handleAddObra = async (e) => {
     e.preventDefault();
     if (!newObra.name) return;
-    if (!user) {
-      alert("Aguarde a conexão com o banco de dados antes de salvar.");
-      return;
-    }
+    if (!user) return;
     try {
       if (editingObraId) {
         const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'obras', editingObraId.toString());
@@ -214,11 +219,7 @@ const App = () => {
   };
 
   const handleEditObraClick = (obra) => {
-    setNewObra({
-      name: obra.name || '',
-      scope: obra.scope || '',
-      status: obra.status || 'Em Andamento'
-    });
+    setNewObra({ name: obra.name || '', scope: obra.scope || '', status: obra.status || 'Em Andamento' });
     setEditingObraId(obra.id);
   };
 
@@ -227,36 +228,64 @@ const App = () => {
     setEditingObraId(null);
   };
 
+  // --- HANDLERS: DISCIPLINAS ---
   const handleAddDisciplina = async (e) => {
     e.preventDefault();
     if (!newDisciplina) return;
-    if (!user) {
-      alert("Aguarde a conexão com o banco de dados antes de salvar.");
-      return;
-    }
+    if (!user) return;
     try {
-      const newId = Date.now().toString();
-      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'disciplinas', newId), { id: newId, name: newDisciplina });
+      if (editingDisciplinaId) {
+        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'disciplinas', editingDisciplinaId.toString());
+        await updateDoc(docRef, { name: newDisciplina });
+        setEditingDisciplinaId(null);
+      } else {
+        const newId = Date.now().toString();
+        await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'disciplinas', newId), { id: newId, name: newDisciplina });
+      }
       setNewDisciplina('');
     } catch (error) {
       console.error(error);
     }
   };
 
+  const handleEditDisciplinaClick = (disciplina) => {
+    setNewDisciplina(disciplina.name || '');
+    setEditingDisciplinaId(disciplina.id);
+  };
+
+  const handleCancelEditDisciplina = () => {
+    setNewDisciplina('');
+    setEditingDisciplinaId(null);
+  };
+
+  // --- HANDLERS: STATUS ---
   const handleAddStatus = async (e) => {
     e.preventDefault();
     if (!newStatus.name) return;
-    if (!user) {
-      alert("Aguarde a conexão com o banco de dados antes de salvar.");
-      return;
-    }
+    if (!user) return;
     try {
-      const newId = Date.now().toString();
-      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'statusList', newId), { ...newStatus, id: newId });
+      if (editingStatusId) {
+        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'statusList', editingStatusId.toString());
+        await updateDoc(docRef, newStatus);
+        setEditingStatusId(null);
+      } else {
+        const newId = Date.now().toString();
+        await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'statusList', newId), { ...newStatus, id: newId });
+      }
       setNewStatus({ name: '', color: 'bg-slate-200 text-slate-800' });
     } catch (error) {
       console.error(error);
     }
+  };
+
+  const handleEditStatusClick = (status) => {
+    setNewStatus({ name: status.name || '', color: status.color || 'bg-slate-200 text-slate-800' });
+    setEditingStatusId(status.id);
+  };
+
+  const handleCancelEditStatus = () => {
+    setNewStatus({ name: '', color: 'bg-slate-200 text-slate-800' });
+    setEditingStatusId(null);
   };
 
   // --- DERIVED DATA ---
@@ -716,6 +745,7 @@ const App = () => {
               
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 
+                {/* OBRAS */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                   <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                     <Briefcase size={20} className="text-slate-500" /> Obras
@@ -761,22 +791,40 @@ const App = () => {
                   </ul>
                 </div>
 
+                {/* DISCIPLINAS */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                   <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                     <Layers size={20} className="text-slate-500" /> Disciplinas
                   </h3>
                   <form onSubmit={handleAddDisciplina} className="flex gap-2 mb-6">
                     <input required type="text" placeholder="Nova Disciplina" className="flex-1 border border-slate-300 p-2 rounded outline-none focus:border-blue-500 text-sm" value={newDisciplina} onChange={e => setNewDisciplina(e.target.value)} />
-                    <button type="submit" className="bg-slate-800 text-white text-sm px-4 rounded hover:bg-slate-700 transition-colors">Add</button>
+                    <button type="submit" className="bg-slate-800 text-white text-sm px-4 py-2 rounded hover:bg-slate-700 transition-colors">
+                      {editingDisciplinaId ? 'Salvar' : 'Add'}
+                    </button>
+                    {editingDisciplinaId && (
+                      <button type="button" onClick={handleCancelEditDisciplina} className="bg-slate-200 text-slate-700 text-sm px-4 py-2 rounded hover:bg-slate-300 transition-colors">
+                        Cancelar
+                      </button>
+                    )}
                   </form>
                   <ul className="divide-y divide-slate-100 max-h-60 overflow-y-auto pr-2">
                     {disciplinas.length === 0 && <p className="text-sm text-slate-500">Nenhuma disciplina cadastrada.</p>}
                     {disciplinas.map(d => (
-                      <li key={d.id} className="py-3 text-sm font-medium text-slate-800">{d.name}</li>
+                      <li key={d.id} className="py-3 text-sm font-medium text-slate-800 flex justify-between items-center group relative pr-8">
+                        {d.name}
+                        <button 
+                          onClick={() => handleEditDisciplinaClick(d)} 
+                          className="absolute right-0 text-slate-400 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" 
+                          title="Editar Disciplina"
+                        >
+                          <Edit size={16} />
+                        </button>
+                      </li>
                     ))}
                   </ul>
                 </div>
 
+                {/* STATUS */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 lg:col-span-2">
                   <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                     <Activity size={20} className="text-slate-500" /> Etapas de Status
@@ -797,13 +845,28 @@ const App = () => {
                         <option value="bg-purple-100 text-purple-800">Roxo</option>
                       </select>
                     </div>
-                    <button type="submit" className="w-full sm:w-auto bg-slate-800 text-white text-sm px-6 py-2 rounded hover:bg-slate-700 transition-colors h-[38px]">Adicionar</button>
+                    <div className="flex gap-2 w-full sm:w-auto h-[38px]">
+                      <button type="submit" className="w-full sm:w-auto bg-slate-800 text-white text-sm px-6 py-2 rounded hover:bg-slate-700 transition-colors">
+                        {editingStatusId ? 'Salvar' : 'Adicionar'}
+                      </button>
+                      {editingStatusId && (
+                        <button type="button" onClick={handleCancelEditStatus} className="w-full sm:w-auto bg-slate-200 text-slate-700 text-sm px-4 py-2 rounded hover:bg-slate-300 transition-colors">
+                          Cancelar
+                        </button>
+                      )}
+                    </div>
                   </form>
                   <div className="flex flex-wrap gap-2">
                     {statusList.map(s => (
-                      <span key={s.id} className={`px-3 py-1.5 rounded-md text-sm font-medium ${s.color}`}>
+                      <button 
+                        key={s.id} 
+                        onClick={() => handleEditStatusClick(s)}
+                        className={`px-3 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 group hover:ring-2 hover:ring-offset-1 hover:ring-blue-400 transition-all ${s.color}`}
+                        title="Editar Status"
+                      >
                         {s.name}
-                      </span>
+                        <Edit size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </button>
                     ))}
                   </div>
                 </div>
